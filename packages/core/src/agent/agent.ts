@@ -153,6 +153,7 @@ import { validateToolInput } from '../tools/validation';
 import type { DynamicArgument } from '../types';
 import { makeCoreTool, createMastraProxy, ensureToolProperties, deepMerge } from '../utils';
 import type { ToolOptions } from '../utils';
+import { resolveDynamicArgument } from '../utils/dynamic-argument';
 import { slugify } from '../utils/slugify';
 import type { MastraVoice } from '../voice';
 import { DefaultVoice } from '../voice';
@@ -2027,11 +2028,7 @@ export class Agent<
   public listAgents({ requestContext = new RequestContext() }: { requestContext?: RequestContext } = {}):
     | Record<string, SubAgent<string, TRequestContext>>
     | Promise<Record<string, SubAgent<string, TRequestContext>>> {
-    const agentsToUse = this.#agents
-      ? typeof this.#agents === 'function'
-        ? this.#agents({ requestContext: requestContext as RequestContext<TRequestContext> })
-        : this.#agents
-      : {};
+    const agentsToUse = this.#agents ? resolveDynamicArgument(this.#agents, { requestContext }) : {};
 
     return resolveMaybePromise(agentsToUse, agents => {
       if (!agents) {
@@ -2118,9 +2115,7 @@ export class Agent<
     requestContext: RequestContext,
   ): Promise<ErrorProcessorOrWorkflow[] | undefined> {
     if (!this.#errorProcessors) return undefined;
-    return typeof this.#errorProcessors === 'function'
-      ? await this.#errorProcessors({ requestContext: requestContext as RequestContext<TRequestContext> })
-      : this.#errorProcessors;
+    return resolveDynamicArgument(this.#errorProcessors, { requestContext });
   }
 
   #withErrorProcessorDefaults(configured: ErrorProcessorOrWorkflow[] | undefined): ErrorProcessorOrWorkflow[] {
@@ -2406,11 +2401,9 @@ export class Agent<
     const configuredProcessors = configuredProcessorOverrides
       ? configuredProcessorOverrides
       : this.#outputProcessors
-        ? typeof this.#outputProcessors === 'function'
-          ? await this.#outputProcessors({
-              requestContext: (requestContext || new RequestContext()) as RequestContext<TRequestContext>,
-            })
-          : this.#outputProcessors
+        ? await resolveDynamicArgument(this.#outputProcessors, {
+            requestContext: requestContext || new RequestContext(),
+          })
         : [];
 
     // Get memory output processors (with deduplication)
@@ -2447,11 +2440,9 @@ export class Agent<
     const configuredProcessors = configuredProcessorOverrides
       ? configuredProcessorOverrides
       : this.#inputProcessors
-        ? typeof this.#inputProcessors === 'function'
-          ? await this.#inputProcessors({
-              requestContext: (requestContext || new RequestContext()) as RequestContext<TRequestContext>,
-            })
-          : this.#inputProcessors
+        ? await resolveDynamicArgument(this.#inputProcessors, {
+            requestContext: requestContext || new RequestContext(),
+          })
         : [];
 
     // Get memory input processors (with deduplication)
@@ -2586,9 +2577,7 @@ export class Agent<
 
     // Get raw input processors (before combining into workflow)
     const configuredInputProcessors = this.#inputProcessors
-      ? typeof this.#inputProcessors === 'function'
-        ? await this.#inputProcessors({ requestContext: ctx as RequestContext<TRequestContext> })
-        : this.#inputProcessors
+      ? await resolveDynamicArgument(this.#inputProcessors, { requestContext: ctx })
       : [];
 
     // Get memory input processors
@@ -2604,9 +2593,7 @@ export class Agent<
 
     // Get raw output processors (before combining into workflow)
     const configuredOutputProcessors = this.#outputProcessors
-      ? typeof this.#outputProcessors === 'function'
-        ? await this.#outputProcessors({ requestContext: ctx as RequestContext<TRequestContext> })
-        : this.#outputProcessors
+      ? await resolveDynamicArgument(this.#outputProcessors, { requestContext: ctx })
       : [];
 
     // Get memory output processors
@@ -2632,12 +2619,9 @@ export class Agent<
   public async listConfiguredInputProcessors(requestContext?: RequestContext): Promise<InputProcessorOrWorkflow[]> {
     if (!this.#inputProcessors) return [];
 
-    const configuredProcessors =
-      typeof this.#inputProcessors === 'function'
-        ? await this.#inputProcessors({
-            requestContext: (requestContext || new RequestContext()) as RequestContext<TRequestContext>,
-          })
-        : this.#inputProcessors;
+    const configuredProcessors = await resolveDynamicArgument(this.#inputProcessors, {
+      requestContext: requestContext || new RequestContext(),
+    });
 
     return configuredProcessors;
   }
@@ -2652,12 +2636,9 @@ export class Agent<
   public async listConfiguredOutputProcessors(requestContext?: RequestContext): Promise<OutputProcessorOrWorkflow[]> {
     if (!this.#outputProcessors) return [];
 
-    const configuredProcessors =
-      typeof this.#outputProcessors === 'function'
-        ? await this.#outputProcessors({
-            requestContext: (requestContext || new RequestContext()) as RequestContext<TRequestContext>,
-          })
-        : this.#outputProcessors;
+    const configuredProcessors = await resolveDynamicArgument(this.#outputProcessors, {
+      requestContext: requestContext || new RequestContext(),
+    });
 
     return configuredProcessors;
   }
@@ -2686,19 +2667,13 @@ export class Agent<
 
     let inputProcessorIds: string[] = [];
     if (this.#inputProcessors) {
-      const processors =
-        typeof this.#inputProcessors === 'function'
-          ? await this.#inputProcessors({ requestContext: ctx as RequestContext<TRequestContext> })
-          : this.#inputProcessors;
+      const processors = await resolveDynamicArgument(this.#inputProcessors, { requestContext: ctx });
       inputProcessorIds = processors.map(p => p.id).filter(Boolean);
     }
 
     let outputProcessorIds: string[] = [];
     if (this.#outputProcessors) {
-      const processors =
-        typeof this.#outputProcessors === 'function'
-          ? await this.#outputProcessors({ requestContext: ctx as RequestContext<TRequestContext> })
-          : this.#outputProcessors;
+      const processors = await resolveDynamicArgument(this.#outputProcessors, { requestContext: ctx });
       outputProcessorIds = processors.map(p => p.id).filter(Boolean);
     }
 
@@ -2718,10 +2693,9 @@ export class Agent<
 
     // Get input processors (static or from function)
     if (this.#inputProcessors) {
-      const inputProcessors =
-        typeof this.#inputProcessors === 'function'
-          ? await this.#inputProcessors({ requestContext: new RequestContext() as RequestContext<TRequestContext> })
-          : this.#inputProcessors;
+      const inputProcessors = await resolveDynamicArgument(this.#inputProcessors, {
+        requestContext: new RequestContext(),
+      });
 
       const combined = this.combineProcessorsIntoWorkflow(inputProcessors, `${this.id}-input-processor`);
       for (const p of combined) {
@@ -2733,10 +2707,9 @@ export class Agent<
 
     // Get output processors (static or from function)
     if (this.#outputProcessors) {
-      const outputProcessors =
-        typeof this.#outputProcessors === 'function'
-          ? await this.#outputProcessors({ requestContext: new RequestContext() as RequestContext<TRequestContext> })
-          : this.#outputProcessors;
+      const outputProcessors = await resolveDynamicArgument(this.#outputProcessors, {
+        requestContext: new RequestContext(),
+      });
 
       const combined = this.combineProcessorsIntoWorkflow(outputProcessors, `${this.id}-output-processor`);
       for (const p of combined) {
@@ -2825,8 +2798,8 @@ export class Agent<
     if (typeof memoryConfig !== 'function') {
       resolvedMemory = memoryConfig;
     } else {
-      const result = memoryConfig({
-        requestContext: requestContext as RequestContext<TRequestContext>,
+      const result = resolveDynamicArgument(memoryConfig, {
+        requestContext,
         mastra: this.#mastra,
       });
       resolvedMemory = await Promise.resolve(result);
@@ -2897,8 +2870,8 @@ export class Agent<
         return this.#workspace;
       }
 
-      const result = this.#workspace({
-        requestContext: requestContext as RequestContext<TRequestContext>,
+      const result = resolveDynamicArgument(this.#workspace, {
+        requestContext,
         mastra: this.#mastra,
       });
       const resolvedWorkspace = await Promise.resolve(result);
@@ -3059,7 +3032,7 @@ export class Agent<
     let workflowRecord;
     if (typeof this.#workflows === 'function') {
       workflowRecord = await Promise.resolve(
-        this.#workflows({ requestContext: requestContext as RequestContext<TRequestContext>, mastra: this.#mastra }),
+        resolveDynamicArgument(this.#workflows, { requestContext, mastra: this.#mastra }),
       );
     } else {
       workflowRecord = this.#workflows ?? {};
@@ -3084,8 +3057,8 @@ export class Agent<
     if (typeof this.#scopes !== 'function') {
       return this.#scopes;
     }
-    return this.#scopes({
-      requestContext: requestContext as RequestContext<TRequestContext>,
+    return resolveDynamicArgument(this.#scopes, {
+      requestContext,
       mastra: this.#mastra,
     });
   }
@@ -3097,8 +3070,8 @@ export class Agent<
       return this.#scorers;
     }
 
-    const result = this.#scorers({
-      requestContext: requestContext as RequestContext<TRequestContext>,
+    const result = resolveDynamicArgument(this.#scorers, {
+      requestContext,
       mastra: this.#mastra,
     });
     return resolveMaybePromise(result, scorers => {
@@ -3150,8 +3123,8 @@ export class Agent<
     }
 
     if (typeof this.#voice === 'function') {
-      const resolved = await this.#voice({
-        requestContext: (requestContext ?? new RequestContext()) as RequestContext<TRequestContext>,
+      const resolved = await resolveDynamicArgument(this.#voice, {
+        requestContext: requestContext ?? new RequestContext(),
         mastra: this.#mastra,
       });
       return resolved ?? new DefaultVoice();
@@ -3206,8 +3179,8 @@ export class Agent<
     | AgentInstructions
     | Promise<AgentInstructions> {
     if (typeof this.#instructions === 'function') {
-      const result = this.#instructions({
-        requestContext: requestContext as RequestContext<TRequestContext>,
+      const result = resolveDynamicArgument(this.#instructions, {
+        requestContext,
         mastra: this.#mastra,
       });
       return resolveMaybePromise(result, instructions => {
@@ -3350,8 +3323,8 @@ export class Agent<
     if (typeof this.#metadata !== 'function') {
       return this.#metadata;
     }
-    const result = this.#metadata({
-      requestContext: requestContext as RequestContext<TRequestContext>,
+    const result = resolveDynamicArgument(this.#metadata, {
+      requestContext,
       mastra: this.#mastra,
     });
     return resolveMaybePromise(result, m => m);
@@ -3500,8 +3473,8 @@ export class Agent<
       return this.#defaultOptions;
     }
 
-    const result = this.#defaultOptions({
-      requestContext: requestContext as RequestContext<TRequestContext>,
+    const result = resolveDynamicArgument(this.#defaultOptions, {
+      requestContext,
       mastra: this.#mastra,
     });
 
@@ -3617,8 +3590,8 @@ export class Agent<
       return resolveToolList(this.#tools as ToolsInput | undefined);
     }
 
-    const result = this.#tools({
-      requestContext: requestContext as RequestContext<TRequestContext>,
+    const result = resolveDynamicArgument(this.#tools, {
+      requestContext,
       mastra: this.#mastra,
     });
 
@@ -3824,8 +3797,8 @@ export class Agent<
   ): Promise<ResolvedModelSelection> {
     // If it's a dynamic function, resolve it
     if (typeof modelConfig === 'function') {
-      const resolved = await modelConfig({
-        requestContext: requestContext as RequestContext<TRequestContext>,
+      const resolved = await resolveDynamicArgument(modelConfig, {
+        requestContext,
         mastra: this.#mastra,
       });
 
