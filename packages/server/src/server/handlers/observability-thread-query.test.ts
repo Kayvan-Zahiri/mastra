@@ -12,6 +12,7 @@ import {
   planThreadQuery,
   planTraceQuery,
   queryThreadsInputSchema,
+  threadQueryRequestSchema,
   TraceQueryExecutionError,
 } from '@mastra/core/storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,7 +55,7 @@ async function captureHttpException(call: Promise<unknown>) {
   }
 }
 
-function getDeclaredErrorSchema(status: 400 | 409 | 413 | 422 | 501 | 504): z.ZodTypeAny {
+function getDeclaredErrorSchema(status: 400 | 409 | 413 | 422 | 501 | 503 | 504): z.ZodTypeAny {
   const schema = QUERY_THREADS.openapi?.responses[status]?.content?.['application/json']?.schema;
   if (!schema) throw new Error(`Missing OpenAPI error schema for ${status}`);
   return schema as z.ZodTypeAny;
@@ -62,6 +63,33 @@ function getDeclaredErrorSchema(status: 400 | 409 | 413 | 422 | 501 | 504): z.Zo
 
 describe('QUERY_THREADS', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it('plans full-history row requests only on a capable adapter', async () => {
+    const { mastra, observabilityStore } = createHarness(['thread-query', 'thread-query-rows']);
+    const input = {
+      ...createTestServerContext({ mastra }),
+      ...threadQueryRequestSchema.parse({ timeRange: { traces: TIME_RANGE } }),
+    };
+    expect(await QUERY_THREADS.handler(input)).toEqual({ threads: [], page: { next: null } });
+    expect(observabilityStore.queryThreads.mock.calls[0]![0]).toMatchObject({
+      result: 'threadRows',
+      timeRange: { mode: 'traces' },
+      orderBy: { field: 'endedAt', direction: 'desc' },
+    });
+  });
+
+  it('returns a structured 501 for new core with an older adapter, before executing a query', async () => {
+    const { mastra, observabilityStore } = createHarness(['thread-query']);
+    const error = await captureHttpException(
+      QUERY_THREADS.handler({
+        ...createTestServerContext({ mastra }),
+        ...threadQueryRequestSchema.parse({ timeRange: { threads: { ...TIME_RANGE, field: 'endedAt' } } }),
+      }),
+    );
+    expect(error.status).toBe(501);
+    expect(await error.getResponse().json()).toMatchObject({ code: 'TRACE_QUERY_UNSUPPORTED' });
+    expect(observabilityStore.queryThreads).not.toHaveBeenCalled();
+  });
 
   it('returns a structured 501 when the installed core lacks thread-query support', async () => {
     const { mastra, getStore } = createHarness();
@@ -183,6 +211,38 @@ describe('QUERY_THREADS', () => {
       }),
     );
     expect(observabilityStore.queryThreads).toHaveBeenCalledOnce();
+  });
+
+  it('returns 422 before calling a store without root span entityId support for trace-scope entityId', async () => {
+    const entityIdIs = { op: 'eq', left: { path: 'entityId' }, right: { literal: 'nightly-scorer' } };
+    const requests = [
+      { traces: { timeRange: TIME_RANGE, where: entityIdIs } },
+      { traces: { timeRange: TIME_RANGE }, where: { traces: { some: entityIdIs } } },
+    ];
+    for (const request of requests) {
+      const { mastra, observabilityStore } = createHarness(['thread-query', 'trace-query-root-span-fields']);
+      const error = await captureHttpException(QUERY_THREADS.handler(params(mastra, request)));
+
+      expect(error.status).toBe(422);
+      expect(await error.getResponse().json()).toMatchObject({
+        code: 'TRACE_QUERY_INVALID',
+        issues: [{ code: 'field_not_allowed', path: ['where'] }],
+      });
+      expect(observabilityStore.queryThreads).not.toHaveBeenCalled();
+    }
+
+    const supported = createHarness(['thread-query', 'trace-query-root-entity-id']);
+    await QUERY_THREADS.handler(params(supported.mastra, requests[1]!));
+    expect(supported.observabilityStore.queryThreads).toHaveBeenCalledOnce();
+
+    const legacy = createHarness(['thread-query']);
+    await QUERY_THREADS.handler(
+      params(legacy.mastra, {
+        traces: { timeRange: TIME_RANGE },
+        where: { traces: { some: { spans: { some: entityIdIs } } } },
+      }),
+    );
+    expect(legacy.observabilityStore.queryThreads).toHaveBeenCalledOnce();
   });
 
   it('returns 501 before calling an older store for root duration predicates in thread relations', async () => {
@@ -444,6 +504,7 @@ describe('QUERY_THREADS', () => {
       '413',
       '422',
       '501',
+      '503',
       '504',
     ]);
 

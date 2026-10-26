@@ -21,7 +21,7 @@ import { CompositeVoice } from '@mastra/core/voice';
 import type { Workflow } from '@mastra/core/workflows';
 import { createWorkflow, createStep } from '@mastra/core/workflows';
 import { Workspace, LocalFilesystem } from '@mastra/core/workspace';
-import { MCPServer } from '@mastra/mcp';
+import { defineEvent, MCPServer } from '@mastra/mcp';
 import type { InMemoryTaskStore } from '@mastra/server/a2a/store';
 import { WorkflowRegistry } from '@mastra/server/server-adapter';
 import type { ServerRoute } from '@mastra/server/server-adapter';
@@ -387,7 +387,14 @@ export async function createDefaultTestContext(): Promise<AdapterTestContext> {
   const testTool = createTestTool({ id: 'test-tool' });
 
   // Create test agent with memory and mocks
-  const agent = createTestAgent({ name: 'test-agent', memory });
+  const agent = createTestAgent({
+    name: 'test-agent',
+    memory,
+    model: [
+      { id: 'id1', model: 'openai/gpt-4o', maxRetries: 3 },
+      { id: 'id2', model: 'openai/gpt-4o-mini', maxRetries: 3 },
+    ],
+  });
   mockAgentMethods(agent);
 
   // Mock Agent.prototype.generate for routes that create new Agent instances
@@ -504,6 +511,12 @@ export async function createDefaultTestContext(): Promise<AdapterTestContext> {
         name: 'Test App',
         html: '<html><body>Test</body></html>',
       },
+    },
+    events: {
+      'ticket.created': defineEvent({
+        description: 'A ticket was created',
+        payloadSchema: z.object({ id: z.string() }),
+      }),
     },
   });
 
@@ -669,7 +682,9 @@ export async function createDefaultTestContext(): Promise<AdapterTestContext> {
         'trace-query-discovery',
         'trace-aggregate',
         'thread-query',
+        'thread-query-rows',
         'span-query',
+        'span-aggregate',
       ]);
       vi.spyOn(observability, 'queryTraces').mockResolvedValue({ traces: [], page: { next: null } });
       vi.spyOn(observability, 'aggregateTraces').mockResolvedValue({ rows: [], truncated: false });
@@ -680,6 +695,7 @@ export async function createDefaultTestContext(): Promise<AdapterTestContext> {
       vi.spyOn(observability, 'getTraceQueryValues').mockResolvedValue({ values: [], valuesTruncated: false });
       vi.spyOn(observability, 'queryThreads').mockResolvedValue({ threads: [], page: { next: null } });
       vi.spyOn(observability, 'querySpans').mockResolvedValue({ spans: [], page: { next: null } });
+      vi.spyOn(observability, 'aggregateSpans').mockResolvedValue({ rows: [], truncated: false });
       await observability.createSpan({
         span: {
           spanId: 'test-span',
