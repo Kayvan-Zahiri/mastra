@@ -945,23 +945,26 @@ describe('createMastraCode', () => {
     const { createMastraCode } = await import('../index.js');
     const instance = new Knowledge({ id: 'mastra' });
     await createMastraCode({
-      knowledge: { key: 'scoped', instance, scopes: [{ tag: 'org:self', access: 'read' }, 'team:self:x'] },
+      knowledge: { key: 'scoped', instance, scopes: [{ scope: 'org:self', access: 'read' }, 'team:self:x'] },
     });
     const context = new RequestContext([['controller', { state: {} }]]);
     expect(codeAgentConfig().knowledge).toBe(instance);
     expect(await codeAgentConfig().scopes({ requestContext: context })).toEqual([
-      { tag: 'org:self', access: 'read' },
+      { scope: 'org:self', access: 'read' },
       'team:self:x',
     ]);
     expect(createKnowledgeInspectorMock).toHaveBeenCalledWith(
-      expect.objectContaining({ hostScopes: [{ tag: 'org:self', access: 'read' }, 'team:self:x'] }),
+      expect.objectContaining({ hostScopes: [{ scope: 'org:self', access: 'read' }, 'team:self:x'] }),
     );
 
     await createMastraCode({ knowledge: { key: 'plain', instance: new Knowledge({ id: 'plain' }) } });
     const plainScopes = codeAgentConfig().scopes;
-    expect(await plainScopes({ requestContext: context })).toEqual(['org:local']);
+    expect(await plainScopes({ requestContext: context })).toEqual([{ scope: 'org:local', access: 'write' }]);
     const factory = new RequestContext([['controller', { state: { factoryOrgId: 'o', factoryProjectId: 'p' } }]]);
-    expect(await plainScopes({ requestContext: factory })).toEqual(['org:o', 'project:p']);
+    expect(await plainScopes({ requestContext: factory })).toEqual([
+      { scope: 'org:o', access: 'write' },
+      { scope: 'project:p', access: 'write' },
+    ]);
   });
 
   it('gives an unresolved Factory session only identity tags, never the host tags', async () => {
@@ -995,7 +998,7 @@ describe('createMastraCode', () => {
       const { createMastraCode } = await import('../index.js');
       const on = await createMastraCode();
       const tools = Object.keys(on.knowledge!.createTools());
-      expect(tools).toEqual(expect.arrayContaining(['knowledge_search', 'knowledge_create', 'knowledge_pin']));
+      expect(tools).toEqual(expect.arrayContaining(['knowledge_search', 'knowledge_record', 'knowledge_pin']));
       expect(on.knowledge!.pinsEnabled).toBe(true);
       expect(codeAgentConfig().knowledge).toBe(on.knowledge);
 
@@ -1850,12 +1853,23 @@ describe('createMastraCode', () => {
     // Third matcher: provider server failures use the same retry budget and visible status.
     const serverErrorPolicy = options!.matchers![2] as typeof transientConnectionPolicy;
     expect(typeof serverErrorPolicy.match).toBe('function');
-    expect(serverErrorPolicy.match!(new Error('Server error. The API may be experiencing issues.'))).toBe(true);
+    expect(serverErrorPolicy.match!(new Error('Internal Server Error'))).toBe(true);
+    expect(
+      serverErrorPolicy.match!({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }),
+    ).toBe(true);
     expect(serverErrorPolicy.match!(Object.assign(new Error('Bad gateway'), { status: 502 }))).toBe(true);
     // Gateway timeouts (504) exhaust the transient budget before the
     // account-rotation processor may classify them as a persistent outage.
     expect(serverErrorPolicy.match!(Object.assign(new Error('Gateway timeout'), { statusCode: 504 }))).toBe(true);
     expect(serverErrorPolicy.match!(Object.assign(new Error('Server error'), { statusCode: 500 }))).toBe(true);
+    expect(
+      serverErrorPolicy.match!(
+        Object.assign(new Error('Service Unavailable'), {
+          statusCode: 503,
+          responseBody: '{"error":{"message":"prompt is too long: 210345 tokens > 200000 maximum"}}',
+        }),
+      ),
+    ).toBe(false);
     expect(serverErrorPolicy.maxRetries).toBe(10);
     expect(serverErrorPolicy.delayMs!({ retryCount: 0 })).toBe(500);
     expect(typeof serverErrorPolicy.onRetry).toBe('function');

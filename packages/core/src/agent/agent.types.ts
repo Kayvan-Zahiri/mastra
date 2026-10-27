@@ -137,7 +137,11 @@ export interface DelegationStartResult {
   modifiedPrompt?: string;
   /** Modified instructions for the sub-agent (optional) */
   modifiedInstructions?: string;
-  /** Modified maxSteps for the sub-agent (optional) */
+  /**
+   * The sub-agent's maxSteps budget. Overrides the cap on the model-supplied
+   * `maxSteps` (capped at the sub-agent's `defaultOptions.maxSteps`), so this
+   * can raise the budget as well as lower it.
+   */
   modifiedMaxSteps?: number;
   /**
    * Metadata to attach to the sub-agent thread when it is created for this delegation (optional).
@@ -469,7 +473,9 @@ export type NetworkOptions<OUTPUT = undefined> = {
    * request-context key. `resource:` and `thread:` scopes set the Memory resource and thread;
    * they must match `memory.resource`/`memory.thread` and the reserved ID keys when those are
    * also set, or the call throws. Never accepted from an HTTP request body.
-   * An entry `{ tag, access: 'read' }` holds that tag read-only for this run.
+   * A plain address is read-only; `{ scope, access: 'write' }` lets the run write there too.
+   * `resource:` and `thread:` scopes are always writable. A tag any source names read-only stays
+   * read-only.
    */
   scopes?: AgentScopeEntry[];
 
@@ -623,7 +629,9 @@ export type AgentExecutionOptionsBase<OUTPUT> = {
    * request-context key. `resource:` and `thread:` scopes set the Memory resource and thread;
    * they must match `memory.resource`/`memory.thread` and the reserved ID keys when those are
    * also set, or the call throws. Never accepted from an HTTP request body.
-   * An entry `{ tag, access: 'read' }` holds that tag read-only for this run.
+   * A plain address is read-only; `{ scope, access: 'write' }` lets the run write there too.
+   * `resource:` and `thread:` scopes are always writable. A tag any source names read-only stays
+   * read-only.
    */
   scopes?: AgentScopeEntry[];
 
@@ -697,8 +705,9 @@ export type AgentExecutionOptionsBase<OUTPUT> = {
   errorProcessors?: ErrorProcessorOrWorkflow[];
   /**
    * Maximum number of times processors can trigger a retry for this generation.
-   * Overrides agent's default maxProcessorRetries.
-   * If not set, defaults to the agent's maxProcessorRetries (which defaults to no retries if also unset).
+   * Overrides the agent's default maxProcessorRetries. Input and output processor
+   * retries require an explicit cap; error processors default to a cap of 3 when
+   * they resolve to a non-empty list and no cap is set.
    */
   maxProcessorRetries?: number;
 

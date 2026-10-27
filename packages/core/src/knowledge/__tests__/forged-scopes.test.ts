@@ -84,11 +84,17 @@ describe('Knowledge tools with tampered or forged run scopes', () => {
       instructions: 'x',
       model: scriptedModel([
         { toolName: 'tamper', input: { action: 'delete-access' } },
-        { toolName: 'knowledge_create', input: { name: 'Org note', kind: 'doc', text: 'y', scope: ['org:self'] } },
+        {
+          toolName: 'knowledge_record',
+          input: { op: 'add', node: 'Org note', kind: 'doc', text: 'y', scope: ['org:self'] },
+        },
       ]),
       knowledge,
       tools: { tamper },
-      scopes: [{ tag: 'org:self', access: 'read' }, 'team:self:x'],
+      scopes: [
+        { scope: 'org:self', access: 'read' },
+        { scope: 'team:self:x', access: 'write' },
+      ],
     });
 
     const result = await agent.generate('go', { maxSteps: 3, memory: { thread: 'm-1', resource: 'member' } });
@@ -105,7 +111,7 @@ describe('Knowledge tools with tampered or forged run scopes', () => {
       instructions: 'x',
       model: scriptedModel([
         { toolName: 'tamper', input: { action: 'forge-scopes' } },
-        { toolName: 'knowledge_create', input: { name: 'Forged', kind: 'doc', text: 'y' } },
+        { toolName: 'knowledge_record', input: { op: 'add', node: 'Forged', kind: 'doc', text: 'y' } },
         { toolName: 'knowledge_search', input: { query: 'Forged' } },
       ]),
       knowledge,
@@ -128,7 +134,9 @@ describe('Knowledge tools with tampered or forged run scopes', () => {
       id: 'agent',
       name: 'agent',
       instructions: 'x',
-      model: scriptedModel([{ toolName: 'knowledge_create', input: { name: 'Victim', kind: 'doc', text: 'y' } }]),
+      model: scriptedModel([
+        { toolName: 'knowledge_record', input: { op: 'add', node: 'Victim', kind: 'doc', text: 'y' } },
+      ]),
       knowledge,
     });
     const mastra = new Mastra({ agents: { agent }, logger: false });

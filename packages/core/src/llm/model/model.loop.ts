@@ -138,6 +138,7 @@ export class MastraLLMVNext extends MastraBase {
     agentId,
     agentVersionId,
     resolvedScopes,
+    resolvedReadOnly,
     agentName,
     toolCallId,
     requestContext,
@@ -156,6 +157,7 @@ export class MastraLLMVNext extends MastraBase {
     onIterationComplete,
     workspace,
     agentRunSpan,
+    agent,
     ...rest
   }: ModelLoopStreamArgs<Tools, OUTPUT>): MastraModelOutput<OUTPUT> {
     const observabilityContext = resolveObservabilityContext(rest);
@@ -257,6 +259,7 @@ export class MastraLLMVNext extends MastraBase {
         agentId,
         agentVersionId,
         resolvedScopes,
+        resolvedReadOnly,
         agentName,
         requestContext,
         actor,
@@ -273,6 +276,7 @@ export class MastraLLMVNext extends MastraBase {
         goal,
         onIterationComplete,
         workspace,
+        agent,
         ...observabilityContext,
         options: {
           ...options,
