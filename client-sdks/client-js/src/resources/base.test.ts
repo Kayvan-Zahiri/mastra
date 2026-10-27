@@ -226,6 +226,43 @@ describe('BaseResource', () => {
     expect(receivedSignal).toBe(clientSignal);
   });
 
+  it.each(['Authorization', 'authorization'])(
+    'uses the request authorization instead of combining differently cased %s headers',
+    async headerName => {
+      server.on('request', (req, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ authorization: req.headers.authorization }));
+      });
+      const clientResource = new BaseResource({
+        baseUrl: serverUrl,
+        retries: 0,
+        headers: { [headerName]: 'Bearer client-token' },
+      });
+      const requestHeaderName = headerName === 'Authorization' ? 'authorization' : 'Authorization';
+
+      expect(
+        await clientResource.request('/test', {
+          headers: { [requestHeaderName]: 'Bearer request-token' },
+        }),
+      ).toEqual({ authorization: 'Bearer request-token' });
+    },
+  );
+
+  it('uses an explicit Content-Type instead of combining it with the JSON default', async () => {
+    server.on('request', (req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ contentType: req.headers['content-type'] }));
+    });
+
+    expect(
+      await resource.request('/test', {
+        method: 'POST',
+        body: { query: 'status' },
+        headers: { 'Content-Type': 'application/vnd.example+json' },
+      }),
+    ).toEqual({ contentType: 'application/vnd.example+json' });
+  });
+
   it('should use custom fetch function when provided', async () => {
     // Arrange: Create a custom fetch that adds a custom header
     const customFetch = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {

@@ -56,8 +56,8 @@ export class BaseResource {
               fetchOptions.method === 'DELETE')
               ? { 'content-type': 'application/json' }
               : {}),
-            ...headers,
-            ...fetchOptions.headers,
+            ...Object.fromEntries(new Headers(headers)),
+            ...Object.fromEntries(new Headers(fetchOptions.headers)),
             // TODO: Bring this back once we figure out what we/users need to do to make this work with cross-origin requests
             // 'x-mastra-client-type': 'js',
           },
